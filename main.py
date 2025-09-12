@@ -1,9 +1,7 @@
 import os
-from apis.semantic_scholar import fetch_papers_from_sematic_scholar
-from apis.pubmed import fetch_papers_from_pubmed
-from apis.arxiv_api import get_arxiv_papers
-from models.summariser import load_summarizer
-from models.utils import read_text_from_file, chunk_text, save_summary_to_pdf
+import traceback
+from logic.core import fetch_papers, summarize_text
+from models.utils import read_text_from_file, save_summary_to_pdf
 
 def save_paper_text(paper, index):
     """Save the paper content to data/papers/ and return the saved file path."""
@@ -16,70 +14,90 @@ def save_paper_text(paper, index):
     
     return file_path
 
+def get_paper_display(paper):
+    """Formats the paper details for display."""
+    display = f"{paper['title']}"
+    if paper.get('authors'):
+        display += f" by {', '.join(paper['authors'])}"
+    if paper.get('year'):
+        display += f" ({paper['year']})"
+    return display
+
 def select_source():
     print("\n📚 Choose a source:")
     print("1. Semantic Scholar")
     print("2. PubMed")
     print("3. Arxiv")
-    return input("Enter choice (1/2/3): ").strip()
+    print("4. CORE")
+
+    source_map = {
+        "1": "Semantic Scholar",
+        "2": "PubMed",
+        "3": "Arxiv",
+        "4": "CORE"
+    }
+
+    choice = input("Enter choice (1/2/3/4): ").strip()
+    return source_map.get(choice)
 
 def main():
-    choice = select_source()
-    query = input("\n🔍 Enter your search query: ")
-
-    if choice == "1":
-        papers = fetch_papers_from_sematic_scholar(query)
-    elif choice == "2":
-        papers = fetch_papers_from_pubmed(query)
-    elif choice == "3":
-        papers = get_arxiv_papers(query)
-    else:
+    source = select_source()
+    if not source:
         print("❌ Invalid choice.")
         return
-    
+
+    query = input("\n🔍 Enter your search query: ")
+
+    try:
+        papers = fetch_papers(source, query)
+    except Exception as e:
+        print(f"❌ Error fetching papers: {e}")
+        print(traceback.format_exc())
+        return
+
     if not papers:
         print("❌ No papers found.")
         return
     
     # save fetched paper contents
     print("\n📥 Saving fetched papers...")
-    paper_paths = []
+    saved_papers = []
     for i, paper in enumerate(papers):
         path = save_paper_text(paper, i)
-        paper_paths.append({
-            "title": paper["title"],
-            "file_path": path
-        })
+        paper['file_path'] = path
+        saved_papers.append(paper)
 
     # Display list
     print("\n📄 Available Papers:")
-    for i, item in enumerate(paper_paths):
-        print(f"{i+1}. {item['title']}")
+    for i, paper in enumerate(saved_papers):
+        print(f"{i+1}. {get_paper_display(paper)}")
 
     try:
         selected_index = int(input("\nSelect paper to summarize (1-N): ")) - 1
-        selected_paper = paper_paths[selected_index]
+        selected_paper = saved_papers[selected_index]
     except (IndexError, ValueError):
         print("❌ Invalid selection.")
         return
     
-    print(f"\n⏳ Loading summarizer for: {selected_paper['title']}")
-    summarizer = load_summarizer()
-    text = read_text_from_file(selected_paper['file_path'])
-    chunks = chunk_text(text)
+    print(f"\n⏳ Summarizing: {selected_paper['title']}")
 
-    print("\n📝 Generating summary...")
-    summary = ""
-    for i, chunk in enumerate(chunks):
-        print(f"🔹 Summarizing chunk {i+1}/{len(chunks)}...")
-        result = summarizer(chunk, max_length=150, min_length=30, do_sample=False)
-        summary += result[0]['summary_text'] + "\n\n"
+    text = read_text_from_file(selected_paper['file_path'])
+    summary = summarize_text(text)
 
     print("\n✅ Summary generated!\n")
 
     # Save outputs
     filename = selected_paper['title']
+    os.makedirs("data/summaries", exist_ok=True)
     save_summary_to_pdf(summary, filename=filename)
+
+    # also save summary as a txt file
+    safe_title = filename.replace(" ", "_").replace("/", "_")[:50]
+    txt_path = os.path.join("data/summaries", f"{safe_title}.txt")
+    with open(txt_path, 'w', encoding='utf-8') as f:
+        f.write(summary)
+
+    print(f"✅ Summary saved to PDF and TXT in 'data/summaries/'")
 
 if __name__ == "__main__":
     main()
