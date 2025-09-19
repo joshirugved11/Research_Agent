@@ -9,8 +9,6 @@
 
    *`pip install -r requirments.txt`*
 
-2. To run this project if you want to fetch papers from **`CORE`** then you need to
-visit this page `https://core.ac.uk/services/api` and follow their documentation to get their API
 
 *`NOTE : It is completly up to you whether you want to fetch papers from CORE`*
 
